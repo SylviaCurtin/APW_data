@@ -1,0 +1,162 @@
+---
+title: "APW_data_explore1"
+author: "Sylvia Soltyk"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include = FALSE}
+library(lubridate)
+library(tidyr)
+library(dplyr)
+library(naniar)
+library(visdat)
+library(simputation)
+library(ggplot2)
+library(scales)
+library(viridis)
+library(tseries)
+library(dse)
+```
+
+#Load data:
+(There were duplicaed dates which I removed manually in the csv)
+```{r}
+APW_data <- read.csv("/Users/sylviasoltyk/Dropbox/PhD/Data/Mecardo_wheat/APW_analysis/APW.csv")
+APW_data$Date <- dmy(APW_data$Date)
+```
+
+#Cleaning data: examining for outliers via histograms and box plots
+```{r}
+hist(APW_data$Adelaide)
+hist(APW_data$Geelong)
+hist(APW_data$Kwinana)
+hist(APW_data$Port.Kembla)
+hist(APW_data$Port.Lincoln)
+
+boxplot(APW_data[,-1]) 
+```
+
+#Cleaning data: identifying where missing data is
+this shows that there are NA's in the data (missing values) # Adelaide 17, Geelong 10, Kwinana 103, Port Kembla 38, Port Lincoln 38 
+```{r}
+summary(APW_data) 
+NAind_Adelaide <- which(is.na(APW_data$Adelaide))
+NAind_Geelong <- which(is.na(APW_data$Geelong))
+NAind_Kwinana <- which(is.na(APW_data$Kwinana))
+NAind_Port.Kembla <- which(is.na(APW_data$Port.Kembla))
+NAind_Port.Lincoln <- which(is.na(APW_data$Port.Lincoln))
+```
+
+proportion of missing values in series. Adeliaide 0.006706114, Geelong 0.003944773, Kwinana 0.04063116, Port Kembla 0.01499014, Port Lincoln 0.01499014
+```{r}
+prop_miss(APW_data$Adelaide)
+prop_miss(APW_data$Geelong)
+prop_miss(APW_data$Kwinana)
+prop_miss(APW_data$Port.Kembla)
+prop_miss(APW_data$Port.Lincoln)
+```
+
+find longest stretch of NA's in data # Adelaide 2, Geelong 1, Kwinana 4, Port Kembla 18, Port Lincoln 6 
+```{r}
+longestNAstrech <- function(x) {
+  with(rle(is.na(x)), max(lengths[values]))  
+}
+longestNAstrech(APW_data$Adelaide) 
+longestNAstrech(APW_data$Geelong) 
+longestNAstrech(APW_data$Kwinana) 
+longestNAstrech(APW_data$Port.Kembla) 
+longestNAstrech(APW_data$Port.Lincoln) 
+
+```
+
+visualisations of missingness
+```{r}
+vis_miss(APW_data[,-1])
+```
+
+#Imputing missing values
+method: last observation carried forward (LOCF)
+```{r}
+APW_LOCF <- APW_data %>% fill(Adelaide, Geelong, Kwinana, Port.Kembla, Port.Lincoln)
+```
+
+exploring the completed data set (no missing values) via a boxplot
+```{r}
+boxplot(APW_LOCF[,-1]) 
+```
+
+creating a plot of the completed data
+
+```{r}
+ggplot(data=APW_LOCF, aes(x=Date)) + 
+  geom_line(aes(y = Adelaide, color = "Adelaide")) + 
+  geom_line(aes(y = Geelong, color="Geelong")) +
+  geom_line(aes(y = Kwinana, color="Kwinana"))+
+  geom_line(aes(y = Port.Kembla, color="Port.Kembla")) +
+  geom_line(aes(y = Port.Lincoln, color="Port.Lincoln")) +
+  scale_y_continuous(limits = c(150,500), breaks=seq(150,500,by=50)) + 
+  scale_x_date(date_breaks = '6 months' , date_labels = "%b-%y") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  labs(x = "Date",
+       y = "AU$/t") 
+```
+
+#checking for stationarity (doesn't look stationary according to the plots)
+augmented dickey fuller test. Alternate hypothesis is stationarity. Result for all: dnr - non stationary
+```{r}
+adf.test(APW_LOCF$Adelaide) 
+adf.test(APW_LOCF$Geelong) 
+adf.test(APW_LOCF$Kwinana) 
+adf.test(APW_LOCF$Port.Kembla) 
+adf.test(APW_LOCF$Port.Lincoln) 
+```
+
+acf - seems to confirm non staitonarity
+```{r}
+acf(APW_LOCF$Adelaide)
+acf(APW_LOCF$Geelong)
+acf(APW_LOCF$Kwinana)
+acf(APW_LOCF$Port.Kembla)
+acf(APW_LOCF$Port.Lincoln)
+```
+
+#Log difference (%) to create a stationary data set
+taking first log differences
+```{r}
+APW_LOCF_diff<-data.frame(APW_LOCF$Date[-1], 100*diffLog(APW_LOCF$Adelaide), 100*diffLog(APW_LOCF$Geelong), 100*diffLog(APW_LOCF$Kwinana), 100*diffLog(APW_LOCF$Port.Kembla), 100*diffLog(APW_LOCF$Port.Lincoln))
+names(APW_LOCF_diff)<-names(APW_LOCF)
+```
+
+just having a look at the data in a boxplot
+```{r}
+boxplot(APW_LOCF_diff[,-1]) 
+```
+
+plot the log differences data
+```{r}
+ggplot(data=APW_LOCF_diff, aes(x=Date)) + 
+    geom_line(aes(y = Adelaide, color = "Adelaide")) + 
+    geom_line(aes(y = Geelong, color="Geelong")) +
+    geom_line(aes(y = Kwinana, color="Kwinana"))+
+    geom_line(aes(y = Port.Kembla, color="Port.Kembla")) +
+    geom_line(aes(y = Port.Lincoln, color="Port.Lincoln")) +
+    scale_y_continuous(limits = c(-25,25), breaks=seq(-25,25,by=5)) + 
+    scale_x_date(date_breaks = '6 months' , date_labels = "%b-%y") +
+    theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+    labs(x = "Date",
+         y = "% daily log return AU$/t") 
+```
+
+check stationarity using Dickey-Fuller test. Result for all: reject, is stationary
+```{r}
+adf.test(APW_LOCF_diff$Adelaide) 
+adf.test(APW_LOCF_diff$Geelong) 
+adf.test(APW_LOCF_diff$Kwinana) 
+adf.test(APW_LOCF_diff$Port.Kembla) 
+adf.test(APW_LOCF_diff$Port.Lincoln) 
+```
+
